@@ -1,4 +1,4 @@
-// background.js — Service worker for multi-platform AI conversation export
+// background.js — Service worker for ChatGPT archival export
 
 // v1.5 media export: pure helpers (ref detection, placeholders, naming).
 // In the service worker, importScripts loads MediaUtils onto `self`. Under
@@ -70,6 +70,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ── Token Capture ─────────────────────────────────────────────────────
 
 async function captureTokenFromPage(tabId, platform) {
+  if (platform !== 'chatgpt') throw new Error('Archive build only supports ChatGPT.');
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
@@ -130,6 +131,7 @@ async function captureTokenFromPage(tabId, platform) {
 // ── Conversation Fetch ────────────────────────────────────────────────
 
 async function fetchConversation(conversationId, token, platform, tabId) {
+  if (platform !== 'chatgpt') throw new Error('Archive build only supports ChatGPT.');
   if (platform === 'chatgpt') {
     return fetchChatGPT(conversationId, token, tabId);
   }
