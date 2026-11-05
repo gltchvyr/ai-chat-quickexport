@@ -1,4 +1,4 @@
-// popup.js — Multi-platform AI Conversation Exporter
+// popup.js — ChatGPT archival exporter
 
 // ── v1.7.1 theme ──────────────────────────────────────────────────────
 // One choice - auto | light | dark - for two things: this popup and the .html
@@ -60,35 +60,9 @@ function saveLabels() {
 function detectPlatform(url) {
   if (!url) return null;
 
-  // ChatGPT
   if (url.includes('chatgpt.com') || url.includes('chat.openai.com')) {
     const match = url.match(/\/c\/([a-f0-9-]+)/);
     if (match) return { platform: 'chatgpt', conversationId: match[1], name: 'ChatGPT' };
-  }
-
-  // Claude
-  if (url.includes('claude.ai')) {
-    const match = url.match(/\/chat\/([a-f0-9-]+)/);
-    if (match) return { platform: 'claude', conversationId: match[1], name: 'Claude' };
-  }
-
-  // Gemini
-  if (url.includes('gemini.google.com')) {
-    const match = url.match(/\/app\/([a-f0-9]+)/);
-    if (match) return { platform: 'gemini', conversationId: match[1], name: 'Gemini' };
-  }
-
-  // Grok
-  if (url.includes('grok.com')) {
-    const match = url.match(/\/c\/([a-f0-9-]+)/);
-    if (match) return { platform: 'grok', conversationId: match[1], name: 'Grok' };
-  }
-
-  // Google AI Studio -- the id is the prompt's Drive file id. The pattern is not
-  // anchored, so /app/prompts/<id> is accepted too, in case the route moves.
-  if (url.includes('aistudio.google.com')) {
-    const match = url.match(/\/prompts\/([A-Za-z0-9_-]+)/);
-    if (match) return { platform: 'aistudio', conversationId: match[1], name: 'AIStudio' };
   }
 
   return null;
@@ -116,7 +90,7 @@ function setTarget(detected, tabTitle) {
   if (!el) return;
   if (!detected || !detected.conversationId) {
     el.className = 'none';
-    el.textContent = 'Open a ChatGPT, Claude, Gemini, Grok or Google AI Studio conversation in this tab.';
+    el.textContent = 'Open a ChatGPT conversation in this tab.';
     return;
   }
   const title = String(tabTitle || '')
@@ -224,7 +198,7 @@ async function doExport(format) {
     const detected = detectPlatform(tab?.url);
 
     if (!detected) {
-      setStatus('Open a supported AI conversation (ChatGPT, Claude, Gemini, Grok, Google AI Studio)', 'error');
+      setStatus('Open a ChatGPT conversation', 'error');
       return;
     }
 
