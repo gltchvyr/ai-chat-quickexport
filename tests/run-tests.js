@@ -16,7 +16,8 @@ const ZipWriter = require(path.join(__dirname, '..', 'zipwriter.js'));
 // background.js exports the pure tree-walker under Node (importScripts is
 // guarded; MediaUtils is require()'d there) so the REAL walker — not a copy —
 // is exercised against fixtures.
-const { walkChatGPTTree, fetchRetrying, aistudioReadPage, aistudioTurnsToMessages, aistudioCleanTitle } =
+const { walkChatGPTTree, fetchRetrying, fetchMediaAssets, assertChatGPTPlatform,
+  assertChatGPTMediaRefs, aistudioReadPage, aistudioTurnsToMessages, aistudioCleanTitle } =
   require(path.join(__dirname, '..', 'background.js'));
 
 let passed = 0, failed = 0;
@@ -676,14 +677,17 @@ console.log('\n[grok: generated_image_card]');
     MediaUtils.collectGrokCardMedia({ cardAttachmentsJson: ['{bad', 7, null] }).length === 0);
 }
 
-// ---- structural: the asset host is actually permitted -------------------
-console.log('\n[structural: grok asset host]');
+// ---- structural: archive host scope -------------------------------------
+console.log('\n[structural: archive host scope]');
 {
   const mf = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8'));
-  check('assets.grok.com is in host_permissions',
-    mf.host_permissions.indexOf('https://assets.grok.com/*') !== -1, mf.host_permissions.join(' '));
+  check('non-ChatGPT asset hosts are absent',
+    mf.host_permissions.indexOf('https://assets.grok.com/*') === -1 &&
+    mf.host_permissions.indexOf('https://claude.ai/*') === -1 &&
+    mf.host_permissions.indexOf('https://gemini.google.com/*') === -1,
+    mf.host_permissions.join(' '));
   const src = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
-  check('fetchGrok collects card media before rewriting',
+  check('dormant upstream Grok adapter still parses consistently',
     src.indexOf('collectGrokCardMedia') < src.indexOf('rewriteGrokRenderTags(text, r, cardPlaceholders)'));
 }
 
@@ -962,54 +966,64 @@ RETRY_SUITE = RETRY_SUITE.then(async () => {
     page.sweep.ran === false, ranErr ? ranErr.message : JSON.stringify(page));
 });
 
-// ---- structural: AI Studio is wired end to end ------------------------------
-console.log('\n[structural: ai studio wired]');
+// ---- structural: archive build exposes ChatGPT only --------------------------
+console.log('\n[structural: ChatGPT-only archive build]');
 {
   const vm = require('vm');
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8'));
-  const bg = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
   const pop = fs.readFileSync(path.join(__dirname, '..', 'popup.js'), 'utf8').replace(/\r\n/g, '\n');
 
-  check('manifest asks for aistudio.google.com',
-    manifest.host_permissions.indexOf('https://aistudio.google.com/*') !== -1);
-  check('manifest description names AI Studio and fits the store limit of 132 characters',
-    /AI Studio/.test(manifest.description) && manifest.description.length <= 132, manifest.description.length);
-  check('token capture knows aistudio (the "no token" guard would reject it)',
-    bg.indexOf("plat === 'aistudio'") !== -1);
-  check('fetchConversation routes aistudio to its adapter',
-    /platform === 'aistudio'\)\s*\{\s*return fetchAIStudio\(conversationId, token, tabId\);/.test(bg));
-  check('the adapter injects the page reader and respects the thoughts switch',
-    bg.indexOf('func: aistudioReadPage') !== -1 && bg.indexOf('includeThoughts: INCLUDE_SYSTEM_TRACES') !== -1);
-  check('popup names Google AI Studio in all three platform lists',
-    (pop.match(/Google AI Studio/g) || []).length >= 3, (pop.match(/Google AI Studio/g) || []).length);
+  check('manifest grants only ChatGPT and OpenAI asset hosts',
+    JSON.stringify(manifest.host_permissions) === JSON.stringify([
+      'https://chatgpt.com/*',
+      'https://chat.openai.com/*',
+      'https://*.oaiusercontent.com/*'
+    ]), manifest.host_permissions.join(' '));
+  check('manifest description is explicitly read-only and ChatGPT-only',
+    /Read-only ChatGPT/.test(manifest.description) && manifest.description.length <= 132,
+    manifest.description);
 
-  // popup.js cannot be required (chrome.* at load); detectPlatform is pure, so
-  // lift it out of the source and run it.
+  let platformError = null;
+  try { assertChatGPTPlatform('claude'); } catch (e) { platformError = e; }
+  check('background platform gate refuses non-ChatGPT requests',
+    !!platformError && /only supports ChatGPT/.test(platformError.message));
+  check('background platform gate accepts ChatGPT requests',
+    assertChatGPTPlatform('chatgpt') === undefined);
+
+  let mediaError = null;
+  try { assertChatGPTMediaRefs([{ kind: 'claude-url', url: 'https://claude.ai/private' }]); }
+  catch (e) { mediaError = e; }
+  check('background media gate refuses non-ChatGPT reference kinds',
+    !!mediaError && /refused non-ChatGPT media/.test(mediaError.message));
+  check('background media gate accepts only ChatGPT file references',
+    assertChatGPTMediaRefs([{ kind: 'chatgpt-file', fileId: 'file-test' }]).length === 1);
+
+  // popup.js cannot be required (chrome.* at load); detectPlatform is pure.
   const m = /function detectPlatform\(url\) \{\n[\s\S]*?\n\}\n/.exec(pop);
   check('detectPlatform can be lifted from popup.js', !!m);
   if (m) {
     const detectPlatform = vm.runInNewContext(m[0] + '\ndetectPlatform');
-    const ai = detectPlatform('https://aistudio.google.com/prompts/14aF6keJPs1NIrRjh4MftkVSefpJHIC3b?model=gemini-3-pro-preview');
-    check('AI Studio prompt url -> platform, filename name, Drive file id',
-      !!ai && ai.platform === 'aistudio' && ai.name === 'AIStudio' &&
-      ai.conversationId === '14aF6keJPs1NIrRjh4MftkVSefpJHIC3b', JSON.stringify(ai));
-    const app = detectPlatform('https://aistudio.google.com/app/prompts/abc_DEF-123');
-    check('/app/prompts/<id> is accepted too', !!app && app.platform === 'aistudio' && app.conversationId === 'abc_DEF-123');
-    check('AI Studio pages that are not a prompt are not a conversation',
-      detectPlatform('https://aistudio.google.com/') === null &&
-      detectPlatform('https://aistudio.google.com/apikey') === null &&
-      detectPlatform('https://aistudio.google.com/prompts') === null);
-    const others = {
-      'https://chatgpt.com/c/0123abcd-ef01-2345-6789-abcdef012345': 'chatgpt',
-      'https://claude.ai/chat/0123abcd-ef01-2345-6789-abcdef012345': 'claude',
-      'https://gemini.google.com/app/0123abcdef012345': 'gemini',
-      'https://grok.com/c/0123abcd-ef01-2345-6789-abcdef012345': 'grok'
-    };
-    const wrong = Object.keys(others).filter(u => { const d = detectPlatform(u); return !d || d.platform !== others[u]; });
-    check('the four existing platforms are still detected', wrong.length === 0, wrong.join(' '));
-    check('an unrelated site is not a platform', detectPlatform('https://example.com/prompts/abc') === null);
+    const chat = detectPlatform('https://chatgpt.com/c/0123abcd-ef01-2345-6789-abcdef012345');
+    check('ChatGPT conversation is detected', !!chat && chat.platform === 'chatgpt');
+    const refused = [
+      'https://claude.ai/chat/0123abcd-ef01-2345-6789-abcdef012345',
+      'https://gemini.google.com/app/0123abcdef012345',
+      'https://grok.com/c/0123abcd-ef01-2345-6789-abcdef012345',
+      'https://aistudio.google.com/prompts/abc_DEF-123',
+      'https://example.com/c/0123abcd-ef01-2345-6789-abcdef012345'
+    ];
+    check('all non-ChatGPT pages are refused by the popup',
+      refused.every(u => detectPlatform(u) === null),
+      refused.filter(u => detectPlatform(u) !== null).join(' '));
   }
 }
+
+RETRY_SUITE = RETRY_SUITE.then(async () => {
+  let err = null;
+  try { await fetchMediaAssets([], 'claude', null); } catch (e) { err = e; }
+  check('actual media entry point refuses non-ChatGPT requests before fetching',
+    !!err && /only supports ChatGPT/.test(err.message));
+});
 
 // ---- theme (1.7.1): the HTML export and the popup ------------------------------
 // A store review asked for a dark background "like on Grok". One choice - auto |
