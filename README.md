@@ -1,4 +1,32 @@
-# AI Chat QuickExport
+# ChatGPT QuickExport — Archive Build
+
+This branch is a read-only, ChatGPT-only archival build maintained for local
+continuity preservation. It exports one open ChatGPT conversation at a time as
+Markdown, JSON, or self-contained HTML. The default upstream branch remains
+unchanged.
+
+The browser-visible entry points, background fetch entry points, media entry
+point, and host permissions all refuse non-ChatGPT use. Older multi-platform
+adapters remain as unreachable upstream code so this safety patch stays small
+and auditable; they have no granted host permissions and are covered by refusal
+tests.
+
+For an archive master, prefer JSON. Keep the first downloaded file unchanged;
+normalization, deduplication, and summaries belong in derived copies.
+
+## Install this archive branch
+
+1. Clone or download the `archive-hardening` branch of this fork.
+2. Keep the folder in its permanent location.
+3. Open `chrome://extensions/` and enable Developer mode.
+4. Choose **Load unpacked** and select the repository folder.
+5. Confirm the extension is named **ChatGPT QuickExport — Archive Build** and
+   that its site access is limited to ChatGPT/OpenAI asset hosts.
+
+Do not install one of the committed historical ZIP files; those are upstream
+release artifacts and are not this hardened branch.
+
+## Upstream documentation
 
 Export full conversations from ChatGPT, Claude, Gemini, Grok & Google AI Studio — every message, every turn, one click.
 
