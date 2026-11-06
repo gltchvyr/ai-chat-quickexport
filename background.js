@@ -16,6 +16,22 @@ if (typeof importScripts === 'function') {
 // (the live data path is fetchClaude here, NOT content.js). 2026-06-13.
 const INCLUDE_SYSTEM_TRACES = true;
 
+const CHATGPT_ONLY_ERROR = 'Archive build only supports ChatGPT.';
+
+function assertChatGPTPlatform(platform) {
+  if (platform !== 'chatgpt') throw new Error(CHATGPT_ONLY_ERROR);
+}
+
+function assertChatGPTMediaRefs(media) {
+  const refs = Array.isArray(media) ? media : [];
+  for (const ref of refs) {
+    if (!ref || ref.kind !== 'chatgpt-file') {
+      throw new Error('Archive build refused non-ChatGPT media.');
+    }
+  }
+  return refs;
+}
+
 // Guard the listener registration so requiring this file under Node (tests,
 // which exercise the pure walkChatGPTTree below) does not touch chrome.*.
 // In the service worker `chrome` is always defined, so this is a no-op there.
@@ -70,7 +86,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ── Token Capture ─────────────────────────────────────────────────────
 
 async function captureTokenFromPage(tabId, platform) {
-  if (platform !== 'chatgpt') throw new Error('Archive build only supports ChatGPT.');
+  assertChatGPTPlatform(platform);
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
@@ -131,7 +147,7 @@ async function captureTokenFromPage(tabId, platform) {
 // ── Conversation Fetch ────────────────────────────────────────────────
 
 async function fetchConversation(conversationId, token, platform, tabId) {
-  if (platform !== 'chatgpt') throw new Error('Archive build only supports ChatGPT.');
+  assertChatGPTPlatform(platform);
   if (platform === 'chatgpt') {
     return fetchChatGPT(conversationId, token, tabId);
   }
@@ -1041,6 +1057,8 @@ async function fetchRetrying(url, init, attempts) {
 }
 
 async function fetchMediaAssets(media, platform, tabId) {
+  assertChatGPTPlatform(platform);
+  media = assertChatGPTMediaRefs(media);
   const assets = [];
   // Sequential on purpose: exports are seconds-scale, and this avoids
   // hammering the platforms' file endpoints from an extension context.
@@ -1230,6 +1248,9 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     walkChatGPTTree: walkChatGPTTree,
     fetchRetrying: fetchRetrying,
+    fetchMediaAssets: fetchMediaAssets,
+    assertChatGPTPlatform: assertChatGPTPlatform,
+    assertChatGPTMediaRefs: assertChatGPTMediaRefs,
     aistudioReadPage: aistudioReadPage,
     aistudioTurnsToMessages: aistudioTurnsToMessages,
     aistudioCleanTitle: aistudioCleanTitle
